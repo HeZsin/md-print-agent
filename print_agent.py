@@ -2,30 +2,24 @@
 """
 明道云本地打印代理
 ==================
-两种工作模式（可同时运行）：
-
-【HTTP 模式】配合油猴脚本「明道云静默打印助手」：
-  脚本把打印内容(HTML/PDF)POST 到本代理，本代理调用系统打印队列静默出纸。
-
-【watch 模式】按钮直印（推荐）：
-  明道云记录按钮 → 工作流「获得记录打印文件」→ 渲染 Word/Excel 写入附件字段
-  → 本代理轮询 V3 接口取附件 → 本地转 PDF → 静默打印 → 回写打印状态。
+工作方式（watch 轮询「待打印队列」表）：
+  明道云业务表按钮 → 工作流「获取记录打印文件」渲染 Word/Excel 并「新建记录」
+  汇入待打印队列表 → 本代理轮询 V3 接口取附件 → 本地转 PDF → 静默打印 → 回写状态。
   需在 config.json 填好明道云连接参数（模板见 config.example.json）。
 
 依赖（零 pip，仅标准库）：
   - Python 3.8+
-  - HTML → PDF：系统自带 Edge 或 Chrome（无头模式渲染）
   - Word/Excel → PDF：本机 Office 或 WPS（COM 调用，自动探测）
   - PDF 静默打印：SumatraPDF（https://www.sumatrapdfreader.org 下载 Portable 版，
     把 SumatraPDF.exe 放到本文件同目录，或安装到默认路径，均会被自动探测）
+  - HTML → PDF：系统自带 Edge 或 Chrome 无头渲染（仅 --test 自检用）
 
 用法：
-  python print_agent.py            # HTTP 模式（默认 127.0.0.1:8765）
-  python print_agent.py --watch    # watch 模式；首次运行自动进入配置向导，
+  python print_agent.py            # 启动代理（轮询待打印队列）；首次运行自动进入配置向导，
                                    # 逐项填写明道云连接/字段/打印机并校验，保存 config.json
   python print_agent.py --test     # 自检：走完整管线打一张测试页到默认打印机
-  python print_agent.py --watch --config D:\\mdprint.json
-  python print_agent.py --port 9000 --sumatra "D:\\tools\\SumatraPDF.exe"
+  python print_agent.py --config D:\\mdprint.json
+  python print_agent.py --sumatra "D:\\tools\\SumatraPDF.exe"
 
 分发给客户机：pyinstaller --onefile --name md-print-agent print_agent.py
 
@@ -54,14 +48,12 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 PRINT_LOCK = threading.Lock()  # ponytail: 全局串行打印；出现并发批量打印需求时升级为 queue.Queue + 单 worker
 SUMATRA = None
-TOKEN = None
 # PyInstaller onefile 下 __file__ 指向解压临时目录；exe 场景以 exe 所在目录为基准（config.json / SumatraPDF 放 exe 旁）
 BASE_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 
@@ -489,83 +481,23 @@ def process_print_row(md, cfg, row, is_select, file_ctl, status_ctl):
             print(f"[watch] 回写失败状态也出错: {e2}")
 
 
-class Handler(BaseHTTPRequestHandler):
-    server_version = "MDPrintAgent/" + VERSION
-
-    def _cors(self):
-        # GM_xmlhttpRequest 本不受 CORS 限制，这里是为 fetch/测试页兜底
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Print-Token")
-        self.send_header("Access-Control-Allow-Private-Network", "true")
-
-    def _json(self, code, obj):
-        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-        self.send_response(code)
-        self._cors()
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def do_OPTIONS(self):
-        self.send_response(204)
-        self._cors()
-        self.end_headers()
-
-    def do_GET(self):
-        path = self.path.split("?")[0]
-        if path in ("/", "/status"):
-            self._json(200, {"ok": True, "agent": "md-print-agent", "version": VERSION,
-                             "sumatra": bool(SUMATRA), "browser": bool(find_browser()),
-                             "printers": [p[0] for p in list_printers()]})
-        elif path == "/printers":
-            self._json(200, {"ok": True,
-                             "printers": [{"name": n, "default": d} for n, d in list_printers()]})
-        else:
-            self._json(404, {"ok": False, "error": "not found"})
-
-    def do_POST(self):
-        if self.path.split("?")[0] != "/print":
-            return self._json(404, {"ok": False, "error": "not found"})
-        if TOKEN and self.headers.get("X-Print-Token") != TOKEN:
-            return self._json(401, {"ok": False, "error": "token mismatch"})
-        try:
-            length = int(self.headers.get("Content-Length") or 0)
-            job = json.loads(self.rfile.read(length) or b"{}")
-            with PRINT_LOCK:
-                result = do_print_job(job)
-            print(f"[{datetime.now():%H:%M:%S}] 打印完成: {result}")
-            self._json(200, {"ok": True, **result})
-        except Exception as e:
-            print(f"[{datetime.now():%H:%M:%S}] 打印失败: {e}")
-            self._json(500, {"ok": False, "error": str(e)})
-
-    def log_message(self, fmt, *args):  # 压掉默认访问日志，只留业务日志
-        pass
-
-
 def main():
-    global SUMATRA, TOKEN
+    global SUMATRA
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         try:
             sys.stdout.reconfigure(encoding="utf-8")
         except Exception:
             pass
 
-    ap = argparse.ArgumentParser(description="明道云本地打印代理")
-    ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=8765)
+    ap = argparse.ArgumentParser(description="明道云本地打印代理（watch 轮询模式）")
     ap.add_argument("--sumatra", default=None, help="SumatraPDF.exe 路径")
-    ap.add_argument("--token", default=None, help="可选共享口令，设置后请求需带 X-Print-Token 头")
     ap.add_argument("--test", action="store_true", help="自检：打一张测试页到默认打印机后退出")
-    ap.add_argument("--watch", action="store_true", help="启用 watch 模式：轮询明道云附件直印（需 config.json）")
+    ap.add_argument("--watch", action="store_true", help="默认即 watch 模式，此参数仅为兼容旧命令保留")
     ap.add_argument("--config", default=str(BASE_DIR / "config.json"),
-                    help="watch 模式配置文件路径（默认同目录 config.json）")
+                    help="配置文件路径（默认同目录 config.json）")
     args = ap.parse_args()
 
     SUMATRA = find_sumatra(args.sumatra)
-    TOKEN = args.token
 
     if args.test:
         print("自检：HTML → PDF → 默认打印机 …")
@@ -573,27 +505,18 @@ def main():
         print("[OK] 测试页已发送。若未出纸：1) 确认 SumatraPDF 已就位 2) 查看打印机队列是否暂停")
         return
 
-    watch_cfg = None
-    if args.watch:
-        watch_cfg = load_watch_config(args.config)
-
-    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    cfg = load_watch_config(args.config)
     printers = ", ".join(n + ("(默认)" if d else "") for n, d in list_printers()) or "(未枚举到)"
     print("=" * 56)
     print(f"  明道云本地打印代理 v{VERSION}")
-    print(f"  监听     : http://{args.host}:{args.port}")
-    print(f"  浏览器   : {find_browser() or '未找到（HTML 打印不可用）'}")
     print(f"  SumatraPDF: {SUMATRA or '未找到（静默打印不可用，见文件头说明）'}")
     print(f"  打印机   : {printers}")
-    if watch_cfg:
-        print(f"  watch    : {watch_cfg['apiBase']} worksheet={watch_cfg['worksheetId'][:12]}… 打印机={watch_cfg['printer'] or '默认'}")
+    print(f"  watch    : {cfg['apiBase']} worksheet={cfg['worksheetId'][:12]}… 打印机={cfg['printer'] or '默认'}")
     print(f"  自检     : python {Path(sys.argv[0]).name} --test")
     print("=" * 56)
 
-    if watch_cfg:
-        threading.Thread(target=run_watch, args=(watch_cfg,), daemon=True).start()
     try:
-        server.serve_forever()
+        run_watch(cfg)
     except KeyboardInterrupt:
         print("\n已停止")
 
