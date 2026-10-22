@@ -5,7 +5,7 @@
 
 
 # 重要：本项目需要的本地依赖（自动探测）：
-- **PDF 静默打印**：需要先安装SumatraPDF（https://www.sumatrapdfreader.org）
+- **PDF 静默打印**：需要先安装SumatraPDF(https://www.sumatrapdfreader.org)
 - **Word/Excel → PDF**：MS Office 或 WPS（COM 调用，双引擎兜底）
 - **HTML → PDF**：系统自带 Edge/Chrome 无头渲染（仅 `--test` 自检需要）
 
