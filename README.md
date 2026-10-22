@@ -115,8 +115,8 @@ python -m PyInstaller --onefile --name md-print-agent print_agent.py
 
 ## 踩坑经验（V3 API 实测，与官方文档不符处）
 
-1. **更新记录必须用 PATCH**：`PATCH /v3/app/worksheets/{id}/rows/{row_id}`，POST/PUT 均返回 405（文档写 POST 是错的）。
-2. **单选字段直接传选项文本值**：筛选和更新都无需选项 key，服务端自动匹配（文档要求传 key，实测不必要）。
+1. **更新记录必须用 PATCH**：`PATCH /v3/app/worksheets/{id}/rows/{row_id}`。
+2. **单选字段直接传选项文本值**：筛选和更新都无需选项 key，服务端自动匹配。
 3. **建表 `POST /v3/app/worksheets` 无需 appId**：AppKey 鉴权自带应用归属。
 4. **AutoNumber 编号规则 API 传不了**：只能建纯数字递增，`print-` 前缀规则需在界面设置。
 5. **回写状态必须 `triggerWorkflow: false`**：否则渲染→打印→回写会触发工作流死循环。
