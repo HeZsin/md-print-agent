@@ -1,0 +1,16 @@
+{
+  "_说明": "复制本文件为 config.json 后填写。状态字段建议用「文本字段」，值为：待打印/打印中/已打印/失败（工作流写「待打印」，代理自动流转）",
+  "apiBase": "https://www.mingdao.com",
+  "appKey": "应用的 Appkey（应用-设置-API密钥）",
+  "appSecret": "应用的 Sign（同页复制）",
+  "worksheetId": "工作表ID（url中 app 之后的串）",
+  "fileControlId": "「打印文件」附件字段的控件ID",
+  "statusControlId": "「打印状态」字段的控件ID（建议文本类型）",
+  "statusPending": "待打印",
+  "statusPrinting": "打印中",
+  "statusDone": "已打印",
+  "statusFailed": "失败",
+  "printer": "",
+  "interval": 3,
+  "insecure": false
+}

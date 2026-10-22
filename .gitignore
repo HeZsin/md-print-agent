@@ -1,0 +1,11 @@
+# 真实密钥配置，严禁入库（模板见 config.example.json）
+config.json
+
+# PyInstaller 构建产物
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
