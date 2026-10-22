@@ -176,7 +176,7 @@ python -m PyInstaller --onefile --name md-print-agent print_agent.py
 **不要为客户创建工作流**——直接在「待打印队列」表用 API 创建一条测试记录即可：
 状态 = 待打印 + 附件 = 测试 PDF（base64），代理捞到后走完整管线，从日志和状态回写判断链路是否通。这样验证的是代理侧全链路；工作流只是往队列表写数据的生产者，与链路无关。
 
-## 踩坑经验（V3 API 实测，与官方文档不符处）
+## 踩坑经验
 
 1. **更新记录必须用 PATCH**：`PATCH /v3/app/worksheets/{id}/rows/{row_id}`。
 2. **单选字段直接传选项文本值**：筛选和更新都无需选项 key，服务端自动匹配。
