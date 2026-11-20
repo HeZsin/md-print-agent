@@ -50,7 +50,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 PRINT_LOCK = threading.Lock()  # ponytail: 全局串行打印；出现并发批量打印需求时升级为 queue.Queue + 单 worker
 SUMATRA = None
@@ -276,8 +276,11 @@ class MingdaoClient:
         return data.get("data") or data
 
     def rows_list(self, worksheet_id, filt, page_size=50):
-        return self._post(f"/v3/app/worksheets/{worksheet_id}/rows/list",
-                          {"filter": filt, "pageIndex": 1, "pageSize": page_size})
+        # filt 为 None 时不带 filter 字段：2026-11 实测 V3 已拒绝空 children 的 group（报"过滤条件错误"）
+        payload = {"pageIndex": 1, "pageSize": page_size}
+        if filt:
+            payload["filter"] = filt
+        return self._post(f"/v3/app/worksheets/{worksheet_id}/rows/list", payload)
 
     def row_update(self, worksheet_id, row_id, control_id, value, is_select):
         fields = [{"id": control_id, "value": ([value] if is_select else value)}]
@@ -372,7 +375,7 @@ def setup_wizard(path: str) -> dict:
     print("\n— 校验连接 —")
     try:
         md = MingdaoClient(cfg)
-        probe = md.rows_list(cfg["worksheetId"], {"type": "group", "logic": "AND", "children": []}, 1)
+        probe = md.rows_list(cfg["worksheetId"], None, 1)
         rows = probe.get("rows") or []
         if rows:
             sample = rows[0].get(cfg["statusControlId"])
@@ -414,7 +417,7 @@ def run_watch(cfg: dict):
 
     # 探测状态字段是文本还是单选：单选筛选/更新必须用选项 key，文本直接用值
     is_select = False
-    probe = md.rows_list(ws, {"type": "group", "logic": "AND", "children": []}, 1)
+    probe = md.rows_list(ws, None, 1)
     rows = probe.get("rows") or []
     if rows:
         sample = rows[0].get(status_ctl)

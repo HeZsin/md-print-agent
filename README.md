@@ -192,6 +192,7 @@ python -m PyInstaller --onefile --name md-print-agent print_agent.py
 9. **PowerShell 中文输出乱码**：枚举打印机等场景需强制 `[Console]::OutputEncoding=UTF8` 并按字节捕获显式解码，不依赖系统区域设置。
 10. **Edge 无头打印拿不到文件**：Edge 已在运行时无头进程会把任务转交常驻实例，必须用独立 `--user-data-dir`（`--test` 自检场景）。
 11. **打印机枚举含脱机副本**：同名打印机可能有多个条目（如"xxx (副本 1)"），config 的 `printer` 必须填准确名称，留空走系统默认需确认默认打印机在线。
+12. **空筛选条件已被 V3 拒绝**：`filter` 传 `{"type":"group","children":[]}`（空条件）会报"过滤条件错误"（2026-11 前可通过，服务端收紧了校验）；无条件查询请直接省略 `filter` 字段。
 
 ## 文件说明
 
